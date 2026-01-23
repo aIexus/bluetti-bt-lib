@@ -22,6 +22,7 @@ class DeviceWriter:
     """
     DeviceWriter with encryption support.
     Supports both old interface (BleakClient) and new interface (MAC address).
+    Can also reuse an existing connection and encryption state from DeviceReader.
     """
 
     def __init__(
@@ -31,6 +32,8 @@ class DeviceWriter:
         config: DeviceWriterConfig = DeviceWriterConfig(),
         lock: asyncio.Lock = asyncio.Lock(),
         future_builder_method: Callable[[], asyncio.Future[Any]] | None = None,
+        shared_client: BleakClient | None = None,
+        shared_encryption: BluettiEncryption | None = None,
     ):
         # Support both old interface (BleakClient) and new interface (MAC address)
         if isinstance(bleak_client_or_mac, str):
@@ -47,6 +50,10 @@ class DeviceWriter:
         self.bluetti_device = bluetti_device
         self.config = config
         self.polling_lock = lock
+
+        # Accept shared client and encryption from DeviceReader
+        self.shared_client = shared_client
+        self.shared_encryption = shared_encryption
 
         self.logger = logging.getLogger(
             f"{__name__}.{mac_loggable(self.mac).replace(':', '_')}"
@@ -78,6 +85,41 @@ class DeviceWriter:
 
         self.logger.debug("Writing to device register")
 
+        # Fast path: reuse existing connection and encryption from DeviceReader
+        if self.shared_client is not None and self.shared_encryption is not None:
+            self.logger.debug("Using shared connection and encryption from reader")
+            async with self.polling_lock:
+                try:
+                    # Prepare command bytes
+                    command_bytes = bytes(command)
+
+                    # Encrypt command if needed using shared encryption
+                    if self.config.use_encryption:
+                        if not self.shared_encryption.is_ready_for_commands:
+                            self.logger.error("Shared encryption not ready")
+                            return
+                        command_bytes = self.shared_encryption.aes_encrypt(
+                            command_bytes, self.shared_encryption.secure_aes_key, None
+                        )
+
+                    self.logger.debug("Writing command: %s", command)
+
+                    await self.shared_client.write_gatt_char(
+                        WRITE_UUID,
+                        command_bytes,
+                    )
+
+                    self.logger.debug("Write successful")
+                    return
+
+                except BleakError as err:
+                    self.logger.warning("Bleak error: %s", err)
+                    return None
+                except BaseException as err:
+                    self.logger.warning("Unknown error: %s", err)
+                    return None
+
+        # Slow path: create own connection (legacy behavior)
         async with self.polling_lock:
             try:
                 async with async_timeout.timeout(self.config.timeout):
