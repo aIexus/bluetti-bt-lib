@@ -4,36 +4,38 @@ import argparse
 import asyncio
 import logging
 from typing import Any
-from bleak import BleakClient
 
-from ..bluetooth import DeviceWriter
+from ..bluetooth import DeviceWriter, DeviceWriterConfig
 from ..utils.device_builder import build_device
 
 
 async def async_write(
     address: str, type: str, encryption: bool, field: str, value: Any
 ):
-    client = BleakClient(address)
     built = build_device(type + "12345678")
 
     if built is None:
         print("Unsupported powerstation type")
         return
 
-    if encryption:
-        print("Encryption is not supported")
-        return
+    print("Creating writer with encryption=" + str(encryption))
 
-    print("Client created")
+    # Create writer config with encryption support
+    config = DeviceWriterConfig(timeout=30, use_encryption=encryption)
 
+    # Create writer with MAC address (new interface)
     writer = DeviceWriter(
-        client,
+        address,
         built,
+        config=config,
+        future_builder_method=lambda: asyncio.Future(),
     )
 
-    print("Writer created")
+    print("Writer created, attempting write...")
 
     await writer.write(field, value)
+
+    print("Write completed successfully")
 
 
 def start():
