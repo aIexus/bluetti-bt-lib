@@ -1,5 +1,5 @@
 from ..base_devices import BaseDeviceV2
-from ..fields import FieldName, UIntField, DecimalField
+from ..fields import FieldName, UIntField, DecimalField, SwitchField
 
 
 class EL30V2(BaseDeviceV2):
@@ -11,5 +11,7 @@ class EL30V2(BaseDeviceV2):
                 UIntField(FieldName.DC_INPUT_POWER, 144),
                 UIntField(FieldName.AC_INPUT_POWER, 146),
                 DecimalField(FieldName.AC_INPUT_VOLTAGE, 1314, 1),
+                SwitchField(FieldName.CTRL_AC, 2011),
+                SwitchField(FieldName.CTRL_DC, 2012),
             ],
         )
